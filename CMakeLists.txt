@@ -24,7 +24,7 @@ ENDIF(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 ########################################################################
 # Project setup
 ########################################################################
-CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.1...3.31)
 PROJECT(OpenFXMisc CXX)
 ENABLE_TESTING()
 
@@ -358,7 +358,7 @@ SET_TARGET_PROPERTIES(Misc PROPERTIES SUFFIX ".ofx")
 
 # Add extra flags to the link step of the plugin
 if(APPLE)
-    set_target_properties(Misc PROPERTIES LINK_FLAGS "-fvisibility=hidden -exported_symbols_list,${OFX_SUPPORT_HEADER_DIR}/osxSymbols")
+    set_target_properties(Misc PROPERTIES LINK_FLAGS "-fvisibility=hidden -Wl,-exported_symbols_list,${OFX_SUPPORT_HEADER_DIR}/osxSymbols")
     set_target_properties(Misc PROPERTIES INSTALL_RPATH "@loader_path/../Frameworks;@loader_path/../Libraries")
 elseif(MINGW)
     set_target_properties(Misc PROPERTIES LINK_FLAGS "-shared -fvisibility=hidden -Xlinker --version-script=${OFX_SUPPORT_HEADER_DIR}/linuxSymbols")
@@ -371,6 +371,35 @@ endif()
 TARGET_COMPILE_DEFINITIONS(Misc PRIVATE OFX_EXTENSIONS_VEGAS OFX_EXTENSIONS_NUKE OFX_EXTENSIONS_NATRON OFX_EXTENSIONS_TUTTLE OFX_SUPPORTS_OPENGLRENDER NOMINMAX)
 #TARGET_LINK_LIBRARIES(Misc Support ${OPENGL_gl_LIBRARY})
 TARGET_LINK_LIBRARIES(Misc ${OPENGL_gl_LIBRARY})
+
+# CImg.h and the inpaint plugin are not part of the repository: fetch them like CImg/Makefile does.
+# Keep CIMG_VERSION in sync with CIMGVERSION in CImg/Makefile.
+set(CIMG_VERSION b33dcc8f9f1acf1f276ded92c04f8231f6c23fcd)
+set(CIMG_URL "https://raw.githubusercontent.com/dtschump/CImg/${CIMG_VERSION}")
+function(cimg_download url file)
+  if(NOT EXISTS "${file}")
+    message(STATUS "Downloading ${url}")
+    file(DOWNLOAD "${url}" "${file}.tmp" STATUS _status TLS_VERIFY ON)
+    list(GET _status 0 _code)
+    if(NOT _code EQUAL 0)
+      file(REMOVE "${file}.tmp")
+      message(FATAL_ERROR "Failed to download ${url}: ${_status}")
+    endif()
+    file(RENAME "${file}.tmp" "${file}")
+  endif()
+endfunction()
+cimg_download("${CIMG_URL}/CImg.h" "${CMAKE_CURRENT_SOURCE_DIR}/CImg/CImg.h")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CImg/Inpaint/inpaint.h")
+  cimg_download("${CIMG_URL}/plugins/inpaint.h" "${CMAKE_CURRENT_BINARY_DIR}/inpaint.h")
+  find_program(PATCH_EXECUTABLE patch REQUIRED)
+  execute_process(COMMAND "${PATCH_EXECUTABLE}" -p0 -o "${CMAKE_CURRENT_SOURCE_DIR}/CImg/Inpaint/inpaint.h"
+                          "${CMAKE_CURRENT_BINARY_DIR}/inpaint.h" "${CMAKE_CURRENT_SOURCE_DIR}/CImg/Inpaint/inpaint.h.patch"
+                  RESULT_VARIABLE _patch_result)
+  if(NOT _patch_result EQUAL 0)
+    file(REMOVE "${CMAKE_CURRENT_SOURCE_DIR}/CImg/Inpaint/inpaint.h")
+    message(FATAL_ERROR "Failed to patch inpaint.h")
+  endif()
+endif()
 
 FILE(GLOB CIMG_SOURCES
   "CImg/CImg.h"
@@ -474,7 +503,7 @@ SET_TARGET_PROPERTIES(CImg PROPERTIES SUFFIX ".ofx")
 
 # Add extra flags to the link step of the plugin
 if(APPLE)
-    set_target_properties(CImg PROPERTIES LINK_FLAGS "-bundle -fvisibility=hidden -exported_symbols_list,${OFX_SUPPORT_HEADER_DIR}/osxSymbols")
+    set_target_properties(CImg PROPERTIES LINK_FLAGS "-fvisibility=hidden -Wl,-exported_symbols_list,${OFX_SUPPORT_HEADER_DIR}/osxSymbols")
     set_target_properties(CImg PROPERTIES INSTALL_RPATH "@loader_path/../Frameworks;@loader_path/../Libraries")
 elseif(WIN32)
     set_target_properties(CImg PROPERTIES LINK_FLAGS "-fvisibility=hidden,--version-script=${OFX_SUPPORT_HEADER_DIR}/linuxSymbols")
